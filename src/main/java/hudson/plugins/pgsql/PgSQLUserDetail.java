@@ -32,8 +32,8 @@ import org.acegisecurity.GrantedAuthority;
 import org.acegisecurity.userdetails.UserDetails;
 
 /**
- *
- * @author Alex Ackerman
+ * Details on an authenticated user.
+ * @author Alex Ackerman, Arnaud Rolly
  */
 public class PgSQLUserDetail implements UserDetails
 {

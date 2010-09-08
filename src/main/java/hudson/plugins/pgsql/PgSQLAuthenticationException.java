@@ -33,7 +33,7 @@ import org.acegisecurity.AuthenticationException;
 /**
  * Signals a failed authentication attempt to the external database.
  * 
- * @author Alex Ackerman
+ * @author Alex Ackerman, Arnaud Rolly
  */
 public class PgSQLAuthenticationException extends AuthenticationException
 {

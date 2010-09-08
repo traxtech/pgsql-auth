@@ -42,6 +42,7 @@ import java.sql.ResultSet;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 import org.acegisecurity.AuthenticationException;
 import org.acegisecurity.GrantedAuthority;
 import org.acegisecurity.providers.UsernamePasswordAuthenticationToken;
@@ -56,22 +57,21 @@ import org.springframework.dao.DataAccessException;
  * Implementation of the AbstractPasswordBasedSecurityRealm that uses a PostgreSQL
  * database as the source of authentication information.
  * 
- * @author Alex Ackerman
+ * @author Alex Ackerman, Arnaud Rolly
  */
-public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
-{
+public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm {
 
     @DataBoundConstructor
     public PgSQLSecurityRealm(String myServer, String myUsername, String myPassword,
             String myPort, String myDatabase, String myDataTable, String myUserField,
-            String myPassField, String myCondition, String encryption)
-    {
+            String myPassField, String myCondition, String encryption) {
         this.myServer = Util.fixEmptyAndTrim(myServer);
         this.myUsername = Util.fixEmptyAndTrim(myUsername);
         this.myPassword = Util.fixEmptyAndTrim(myPassword);
         this.myPort = Util.fixEmptyAndTrim(myPort);
-        if ((myPort == null) || (myPort.equals("")))
+        if ((myPort == null) || (myPort.equals(""))) {
             myPort = "5432";
+        }
         this.myPort = myPort;
         this.myDatabase = Util.fixEmptyAndTrim(myDatabase);
         this.myCondition = Util.fixEmptyAndTrim(myCondition);
@@ -81,13 +81,13 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
         this.encryption = encryption;
     }
 
-    public static final class DescriptorImpl extends Descriptor<SecurityRealm>
-    {
+    public static final class DescriptorImpl extends Descriptor<SecurityRealm> {
+
         @Override
         public String getHelpFile() {
             return "/plugin/pgsql-auth/help/overview.html";
         }
-        
+
         @Override
         public String getDisplayName() {
             return Messages.DisplayName();
@@ -104,8 +104,7 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
     }
 
     @Extension
-    public static DescriptorImpl install()
-    {
+    public static DescriptorImpl install() {
         return new DescriptorImpl();
     }
 
@@ -122,18 +121,16 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
      */
     @Override
     protected UserDetails authenticate(String username, String password)
-            throws AuthenticationException
-    {
+            throws AuthenticationException {
         UserDetails userDetails = null;
 
         String connectionString;
 
-        connectionString = "jdbc:postgresql://" + myServer + "/" +
-                myDatabase;
+        connectionString = "jdbc:postgresql://" + myServer + "/"
+                + myDatabase;
         LOGGER.fine("PostgreSQLSecurity: Connection String - " + connectionString);
         Connection conn = null;
-        try
-        {
+        try {
             // Connect to the database
             Class.forName("org.postgresql.Driver").newInstance();
             conn = DriverManager.getConnection(connectionString,
@@ -142,33 +139,27 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
 
             // Prepare the statement and query the user table
             // TODO: Review userQuery to see if there's a better way to do this
-            String userQuery = "SELECT * FROM " + myDataTable + " WHERE " +
-                    myUserField + " = ?";
-            LOGGER.info("PostgreSQLSecurity: prepare statement '" + userQuery + "'");
+            String userQuery = "SELECT * FROM " + myDataTable + " WHERE "
+                    + myUserField + " = ?";
             PreparedStatement statement = conn.prepareStatement(userQuery);
-            LOGGER.info("PostgreSQLSecurity: XXX.1");
-            LOGGER.info("PostgreSQLSecurity: Query Info - ");
-            LOGGER.info("- Table: " + myDataTable);
-            LOGGER.info("- User Field: " + myUserField);
-            LOGGER.info("- Username: " + myUsername);
+            LOGGER.fine("PostgreSQLSecurity: Query Info - ");
+            LOGGER.log(Level.FINE, "- Table: {0}", myDataTable);
+            LOGGER.fine("- User Field: " + myUserField);
+            LOGGER.fine("- Username: " + myUsername);
             //statement.setString(2, myUserField);
             statement.setString(1, username);
-            LOGGER.info("PostgreSQLSecurity: XXX.2");
             ResultSet results = statement.executeQuery();
-            LOGGER.info("PostgreSQLSecurity: XXX.3");
-            LOGGER.fine("PostgreSQLSecurity: Query executed.");
 
-            if (results.next())
-            {
+            if (results.next()) {
                 String storedPassword = results.getString(myPassField);
 
                 boolean matched = false;
 
                 if (encryption.equals("PLAIN")) {
                     matched = password.equals(storedPassword);
-                } else if(encryption.equals("JASYPTBASIC")) {
+                } else if (encryption.equals("JASYPTBASIC")) {
                     matched = new StrongPasswordEncryptor().checkPassword(password, storedPassword);
-                } else if(encryption.equals("JASYPTSTRONG")) {
+                } else if (encryption.equals("JASYPTSTRONG")) {
                     matched = new StrongPasswordEncryptor().checkPassword(password, storedPassword);
                 } else {
                     MessageDigest md = MessageDigest.getInstance(encryption);
@@ -176,32 +167,10 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
                     String digested = getHexString(md.digest());
                     matched = digested.toLowerCase().equalsIgnoreCase(storedPassword.toLowerCase());
                 }
-                /*
-                Cipher cipher;
-                if (encryption.equals(Cipher.CRYPT))
-                {
-                    String salt = storedPassword.substring(0, 2);
-                    cipher = new Cipher(encryption, salt);
-                }
-                else
-                {
-                    cipher = new Cipher(encryption);
-                }
-                String encryptedPassword = cipher.encode(password.trim()).toLowerCase();
-                 *
-                 */
-                LOGGER.info("Encryption: " + encryption);
-                LOGGER.info("Given Password: " + password);
-                LOGGER.info("Stored Password: " + storedPassword);
-                //if (!storedPassword.equals(encryptedPassword))
-                if(!matched)
-                {
-                    LOGGER.warning("PostgreSQLSecurity: Invalid Username or Password - no match");
+                if (!matched) {
+                    LOGGER.warning("PostgreSQLSecurity: Invalid Username or Password");
                     throw new PgSQLAuthenticationException("Invalid Username or Password");
-                }
-                else
-                {
-                    LOGGER.info("Passwords match");
+                } else {
                     // Password is valid.  Build UserDetail
                     Set<GrantedAuthority> groups = new HashSet<GrantedAuthority>();
                     groups.add(SecurityRealm.AUTHENTICATED_AUTHORITY);
@@ -209,30 +178,19 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
                             true, true, true, true,
                             groups.toArray(new GrantedAuthority[groups.size()]));
                 }
-            }
-            else
-            {
-                LOGGER.warning("PostgreSQLSecurity: Invalid Username or Password - no user");
+            } else {
+                LOGGER.warning("PostgreSQLSecurity: Invalid Username or Password");
                 throw new PgSQLAuthenticationException("Invalid Username or Password");
             }
-
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-            LOGGER.warning("PostgreSQLSecurity Realm Error: " + e.getLocalizedMessage());
-        }
-        finally
-        {
-            if (conn != null)
-            {
-                try
-                {
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "PostgreSQLSecurity Realm Error: "
+                    + ex.getLocalizedMessage(), ex);
+        } finally {
+            if (conn != null) {
+                try {
                     conn.close();
                     LOGGER.info("PostgreSQLSecurity: Connection closed.");
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     /** Ignore any errors **/
                 }
             }
@@ -250,27 +208,25 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
      */
     @Override
     public UserDetails loadUserByUsername(String username)
-            throws UsernameNotFoundException, DataAccessException
-    {
+            throws UsernameNotFoundException, DataAccessException {
         UserDetails user = null;
         String connectionString;
 
-        connectionString = "jdbc:pgsql://" + myServer + "/" +
-                myDatabase;
+        connectionString = "jdbc:postgresql://" + myServer + "/"
+                + myDatabase;
         LOGGER.info("PostgreSQLSecurity: Connection String - " + connectionString);
         Connection conn = null;
-        try
-        {
+        try {
             // Connect to the database
-            Class.forName("com.pgsql.jdbc.Driver").newInstance();
+            Class.forName("org.postgresql.Driver").newInstance();
             conn = DriverManager.getConnection(connectionString,
                     myUsername, myPassword);
             LOGGER.info("PostgreSQLSecurity: Connection established.");
 
             // Prepare the statement and query the user table
             // TODO: Review userQuery to see if there's a better way to do this
-            String userQuery = "SELECT * FROM " + myDataTable + " WHERE " +
-                    myUserField + " = ?";
+            String userQuery = "SELECT * FROM " + myDataTable + " WHERE "
+                    + myUserField + " = ?";
             PreparedStatement statement = conn.prepareStatement(userQuery);
             //statement.setString(1, myDataTable);
             //statement.setString(2, myUserField);
@@ -279,37 +235,26 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
             LOGGER.fine("PostgreSQLSecurity: Query executed.");
 
             // Grab the first result (should be only user returned)
-            if (results.first())
-            {
+            if (results.first()) {
                 // Build the user detail
                 Set<GrantedAuthority> groups = new HashSet<GrantedAuthority>();
                 groups.add(SecurityRealm.AUTHENTICATED_AUTHORITY);
                 user = new PgSQLUserDetail(username, results.getString(myPassField),
-                            true, true, true, true, 
-                            groups.toArray(new GrantedAuthority[groups.size()]));
-            }
-            else
-            {
+                        true, true, true, true,
+                        groups.toArray(new GrantedAuthority[groups.size()]));
+            } else {
                 LOGGER.warning("PostgreSQLSecurity: Invalid Username or Password");
                 throw new UsernameNotFoundException("PostgreSQL: User not found");
             }
 
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             LOGGER.warning("PostgreSQLSecurity Realm Error: " + e.getLocalizedMessage());
-        }
-        finally
-        {
-            if (conn != null)
-            {
-                try
-                {
+        } finally {
+            if (conn != null) {
+                try {
                     conn.close();
                     LOGGER.info("PostgreSQLSecurity: Connection closed.");
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     /** Ignore any errors **/
                 }
             }
@@ -326,14 +271,12 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
      */
     @Override
     public GroupDetails loadGroupByGroupname(String groupname)
-            throws UsernameNotFoundException, DataAccessException
-    {
+            throws UsernameNotFoundException, DataAccessException {
         LOGGER.warning("ERROR: Group lookup is not supported.");
         throw new UsernameNotFoundException("PostgreSQLSecurityRealm: Non-supported function");
     }
 
-    class Authenticator extends AbstractUserDetailsAuthenticationProvider
-    {
+    class Authenticator extends AbstractUserDetailsAuthenticationProvider {
 
         @Override
         protected void additionalAuthenticationChecks(UserDetails userDetails,
@@ -349,65 +292,52 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
             return PgSQLSecurityRealm.this.authenticate(username,
                     authentication.getCredentials().toString());
         }
-
     }
 
-    public String getMyServer()
-    {
+    public String getMyServer() {
         return myServer;
     }
 
-    public String getMyUsername()
-    {
+    public String getMyUsername() {
         return myUsername;
     }
 
-    public String getMyPassword()
-    {
+    public String getMyPassword() {
         return myPassword;
     }
 
-    public String getMyDatabase()
-    {
+    public String getMyDatabase() {
         return myDatabase;
     }
 
-    public String getMyDataTable()
-    {
+    public String getMyDataTable() {
         return myDataTable;
     }
 
-    public String getMyUserField()
-    {
+    public String getMyUserField() {
         return myUserField;
     }
 
-    public String getMyPassField()
-    {
+    public String getMyPassField() {
         return myPassField;
     }
 
-    public String getMyPort()
-    {
+    public String getMyPort() {
         return myPort;
     }
-    
-    public String getMyCondition()
-    {
+
+    public String getMyCondition() {
         return myCondition;
     }
 
-    public String getEncryption()
-    {
+    public String getEncryption() {
         return encryption;
     }
-
     /**
      * Logger for debugging purposes.
      */
     private static final Logger LOGGER =
             Logger.getLogger(PgSQLSecurityRealm.class.getName());
-
     /**
      * The PostgreSQL server to use.
      */
@@ -445,10 +375,8 @@ public class PgSQLSecurityRealm extends AbstractPasswordBasedSecurityRealm
      * field used by Bugzilla.
      */
     private String myCondition;
-
     /**
      * Encryption type used for the password
      */
     private String encryption;
-
 }
